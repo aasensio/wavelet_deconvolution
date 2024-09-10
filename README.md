@@ -32,3 +32,9 @@ Install the packages following their instructions, but the following should do t
     pip install numpy astropy ptwt matplotlib tqdm kornia
     pip install torch torchvision torchaudio
     
+## References
+
+- Starck, J.-L., and Murtagh, F., 1994, "Image restoration with noise suppression using the wavelet transform", A&A 288, 343–348.
+- Starck, J.-L., and Murtagh, F., 2006, "Astronomical Image and Data Analysis", 2nd ed., Springer, New York
+- Starck, J.-L., Murtagh, F., Fadili, J. M., 2006, "Sparse Image and Signal Processing: Wavelets, Curvelets, Morphological Diversity", Cambdridge
+- https://academic.oup.com/mnras/article/426/2/1223/974193
