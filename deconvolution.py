@@ -269,14 +269,14 @@ class Deconvolution(nn.Module):
         # Define the PSF. Pad it, shift it and normalize it, and compute its Fourier transform
         self.psf = psf 
         self.psf = np.pad(self.psf, pad_width=((self.pad_width // 2, self.pad_width // 2), (self.pad_width // 2, self.pad_width // 2)), mode='symmetric')
-        self.psf = np.fft.fftshift(self.psf)
+        self.psf = np.fft.ifftshift(self.psf)
         self.psf = torch.tensor(self.psf.astype('float32')).to(self.device)
         self.psf = self.psf / torch.sum(self.psf)
         self.psf_ft = torch.fft.fft2(self.psf)
         
         # Fourier mask
         mask = self.rho <= diffraction_limit
-        mask = np.fft.fftshift(mask)
+        mask = np.fft.ifftshift(mask)
 
         # Define specific wavelet family
         self.wavelet = wavelet
