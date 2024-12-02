@@ -16,6 +16,13 @@ try:
 except:
     NVITOP = False
 
+def saturation_model(x, x0):
+    """
+    Saturation function
+    """
+    # return x - 1.0 / a * torch.log(x0 + torch.exp(a * (x - x0)))
+    return torch.clamp(x, max=x0)
+
 class Deconvolution(nn.Module):
     def __init__(self, config):
         """
@@ -74,6 +81,8 @@ class Deconvolution(nn.Module):
 
         # Define the scaler for the automatic mixed precision
         self.scaler = torch.GradScaler("cuda", enabled=self.use_amp)
+
+        self.saturation = self.config['saturation']
     
                      
     def lofdahl_scharmer_filter(self, image_ft, psf_ft):
@@ -210,7 +219,7 @@ class Deconvolution(nn.Module):
                    lambda_iuwt=0.0,
                    wavelet='haar',
                    limit_zero=False,
-                   avoid_saturated=False):
+                   saturation='remove'):
         """Deconvolve a set of images using a common PSF
 
         It optimizes the following loss:
@@ -238,7 +247,9 @@ class Deconvolution(nn.Module):
             lambda_iuwt (float, optional): weight parameter for IUWT regularization. Defaults to 0.0.
             wavelet (str, optional): wavelet family to use in case lambda_wavelet is not zero. Defaults to 'haar'.
             limit_zero (bool, optional): Force a clamping of the image to zero from below. Defaults to False.
-            avoid_saturated (bool, optional): _description_. Defaults to False.
+            saturation (str, optional): What to do with saturated pixels ('remove', 'model'). Defaults to 'remove'.
+                If 'model' is used, the saturation parameter is used to model the saturation level
+                If 'remove', the saturated pixels are removed from the likelihood computation
         
         Returns:
 
@@ -252,17 +263,15 @@ class Deconvolution(nn.Module):
         obs = np.pad(frames, pad_width=((0, 0), (0, 0), (self.pad_width // 2, self.pad_width // 2), (self.pad_width // 2, self.pad_width // 2)), mode='symmetric')        
         
         # Compute pixels with NaN values. They are considered saturated and won't be used in the computation of the likelihood
-        if avoid_saturated:
-            self.good_pixels = np.isnan(obs) == 0
-            self.saturated_pixels = np.isnan(obs)
+        if saturation == 'remove':
+            self.good_pixels = obs < self.saturation
+            self.saturated_pixels = obs >= self.saturation
+            # Set saturated pixels to 1.0 for the initial guess
+            obs[self.saturated_pixels] = self.saturation
         else:
             self.good_pixels = np.ones_like(obs).astype('bool')
             self.saturated_pixels = np.zeros_like(obs).astype('bool')
-
-        # Set saturated pixels to 1.0 for the initial guess
-        if avoid_saturated:
-            obs[self.saturated_pixels] = 1.0
-
+        
         # Transform to PyTorch tensor and move to GPU
         obs = torch.tensor(obs.astype('float32')).to(self.device)            
         
@@ -360,6 +369,10 @@ class Deconvolution(nn.Module):
                 else:
                     regul_iuwt = torch.tensor(0.0).to(self.device)
                 
+                # Apply the saturation model if needed                
+                if saturation == 'model':
+                    convolved = saturation_model(convolved, self.saturation)                
+
                 # Compute the likelihood only in the unsaturated pixels
                 loss_mse = torch.mean( (obs[self.good_pixels] - convolved[self.good_pixels])**2)
 
@@ -393,6 +406,7 @@ class Deconvolution(nn.Module):
             tmp['R_l1'] = f'{regul_l1.item():.8f}'
             tmp['R_iuwt'] = f'{regul_iuwt.item():.8f}'
             tmp['R_wave'] = f'{regul_wavelet.item():.8f}'
+            tmp['minmax'] = f'{torch.min(convolved).item():.8f}/{torch.max(convolved).item():.8f}'
             tmp['L'] = f'{loss.item():.8f}'
             t.set_postfix(ordered_dict=tmp)
 
